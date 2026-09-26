@@ -276,6 +276,43 @@ a new calculator, add an `analysis-context.ts` adapter and register it as
 `buildAnalysisContext` in `definitions.ts`; then render `<AiAnalysisPanel calculator="<slug>" …/>`.
 To change provider, implement `LlmProvider` and return it from `getAnalysisProvider()`.
 
+### Decision: direct LLM API calls, not MCP
+
+AI analysis is an application feature, so the backend calls the LLM provider's
+HTTP API directly (`src/lib/ai/providers/openai.ts`, behind the `LlmProvider`
+interface). MCP is **not** used for it: MCP is for giving an AI agent access to
+external tools and data, not for the app's own server-to-LLM calls. And no
+layer — AI or MCP — ever performs the financial math; the deterministic engine
+does.
+
+### Future: MCP data layer (not built yet)
+
+```
+DecisionLens
+    │
+    ├── Calculator Engine      deterministic math — the only source of numbers
+    │
+    ├── AI Analysis            backend → LLM API directly; interprets engine output
+    │
+    └── MCP                    external tools/data, added later
+         ├── University data
+         ├── Scholarship data
+         ├── Salary data
+         ├── Cost-of-living data
+         └── Web research
+```
+
+When the MCP layer arrives, keep these boundaries:
+
+- MCP data only **suggests inputs** (e.g. a typical salary or tuition). It
+  pre-fills fields the user can see and edit, with the source shown, and still
+  passes through normal validation into the engine. It never feeds results.
+- The AI analysis context stays deterministic: engine output plus, at most,
+  clearly labelled source citations — never unverified external numbers
+  presented as calculated results. The numeric guard keeps applying.
+- MCP clients live in their own module (e.g. `src/lib/mcp/`), separate from
+  `src/lib/ai/` and the calculators, so each can change independently.
+
 ## 7. Adding a new calculator
 
 1. Create `src/lib/calculators/<slug>/` with `types.ts`, `defaults.ts`
