@@ -6,6 +6,7 @@
  * math, generic presentational components. No math happens here.
  */
 
+import { AiAnalysisPanel } from "@/components/calculator/AiAnalysisPanel";
 import { AssumptionList } from "@/components/calculator/AssumptionList";
 import { CalculatorLayout } from "@/components/calculator/CalculatorLayout";
 import { CumulativeChart, type ChartSeries, type ChartTimeAxis } from "@/components/calculator/CumulativeChart";
@@ -207,6 +208,8 @@ export function JobSwitchCalculator() {
         </h2>
         <StatGrid items={stats} />
       </section>
+
+      <AiAnalysisPanel calculator="job-switch-roi" inputs={c.inputs} currency={currency} disabled={stale} />
 
       <Card as="section" aria-labelledby="timeline-title">
         <CardHeader

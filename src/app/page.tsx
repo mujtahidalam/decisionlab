@@ -23,7 +23,7 @@ const principles = [
   },
   {
     title: "Deterministic, not AI-generated",
-    body: "Math runs in plain, unit-tested code. The same inputs always give the same answer — no language model does the arithmetic.",
+    body: "Math runs in plain, unit-tested code. The same inputs always give the same answer. Optional AI analysis explains your results but never calculates or changes them.",
   },
   {
     title: "Scenarios, not single guesses",

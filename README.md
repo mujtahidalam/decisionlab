@@ -14,9 +14,35 @@ DecisionLens helps people evaluate major financial and career decisions using
   JSON-LD (`WebApplication`, `FAQPage`, `BreadcrumbList`, `WebSite`), sitemap, robots
 - Shareable results: inputs live in the URL query string
 - Optional **Save calculation**: stores inputs + server-computed results in PostgreSQL under a random link
+- Optional **AI Decision Analysis**: an on-demand, structured interpretation of a result — the AI explains the numbers but never calculates or changes them
 - Responsive, light/dark, keyboard- and screen-reader-friendly; charts include data tables
 
-Not in V1 (by design): authentication, payments, AI-generated recommendations.
+Not in V1 (by design): authentication, payments.
+
+## AI Decision Analysis
+
+**The deterministic calculator is the source of truth; the AI only interprets its results.**
+
+```
+inputs → validation → deterministic engine → structured context (formatted numbers)
+       → POST /api/analyze → LLM (structured output) → schema check → numeric guard → report
+```
+
+- The browser sends **only** `{ calculator, inputs, currency }`. The server re-validates the inputs,
+  **recomputes every result, scenario and sensitivity figure** with the engine, and sends those to the AI.
+  Any `results` a client sends are ignored.
+- The response must match a strict JSON schema, and a **numeric guard** rejects any answer that contains a
+  number (with its unit — durations, percentages, amounts) the calculator didn't produce.
+- Called only when the user clicks **Analyze My Result**, never for invalid inputs; 10 requests / 10 min per client.
+- Nothing is stored; failures are logged by category only, never with inputs or AI text.
+- Without `OPENAI_API_KEY` the button shows "AI analysis is temporarily unavailable…" and everything else works.
+
+Setup: add `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-mini`) to `.env.local`. See `.env.example`.
+
+`POST /api/analyze` — body `{ "calculator": "masters-roi", "inputs": {…}, "currency": "USD" }` →
+`200 { analysis: { summary, key_drivers[], risks[], sensitivity[], assumptions[], questions_to_consider[] }, meta }`;
+`400` invalid request/inputs (with `fieldErrors`), `404` unknown calculator, `413` body > 16 KB, `429` rate-limited,
+`502` AI failed or returned an invalid/unverifiable answer, `503` AI not configured.
 
 ## Quick start
 
@@ -63,8 +89,9 @@ src/features/shared/               shared client controller (state, URL sync, sa
 src/components/calculator/         reusable calculator UI (inputs, stats, scenarios, charts, methodology, FAQ)
 src/features/<slug>/               client containers wiring state → engine → components
 src/lib/db/                        schema, connections, seed, repositories (PostgreSQL via Drizzle)
-src/lib/services/                  session saving/loading used by the API routes
-src/app/api/                       JSON API (calculators, sessions)
+src/lib/ai/                        provider-neutral AI analysis layer (prompt, schema, numeric guard, OpenAI provider)
+src/lib/services/                  session saving/loading and AI analysis used by the API routes
+src/app/api/                       JSON API (calculators, sessions, analyze)
 src/app/                           routes, metadata, JSON-LD, sitemap, robots, OG image
 drizzle/                           generated SQL migrations
 ```

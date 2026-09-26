@@ -8,6 +8,7 @@
  * It performs no math itself.
  */
 
+import { AiAnalysisPanel } from "@/components/calculator/AiAnalysisPanel";
 import { AssumptionList } from "@/components/calculator/AssumptionList";
 import { CalculatorLayout } from "@/components/calculator/CalculatorLayout";
 import { CumulativeChart, type ChartSeries, type ChartTimeAxis } from "@/components/calculator/CumulativeChart";
@@ -186,6 +187,8 @@ export function MastersRoiCalculator() {
         </h2>
         <StatGrid items={stats} />
       </section>
+
+      <AiAnalysisPanel calculator="masters-roi" inputs={c.inputs} currency={currency} disabled={stale} />
 
       <Card as="section" aria-labelledby="timeline-title">
         <CardHeader

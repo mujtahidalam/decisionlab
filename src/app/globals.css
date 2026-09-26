@@ -23,6 +23,10 @@
   --negative-soft: #fbeae8;
   --warning-soft: #fdf3dc;
   --warning-ink: #7a4b00;
+  /* AI interpretation: a distinct violet family so it never reads as calculator output */
+  --ai: #5b3fc4;
+  --ai-soft: #f1edfc;
+  --ai-line: #d9d0f5;
 
   /* Chart series (validated categorical order: blue, orange, aqua) */
   --series-1: #2a78d6;
@@ -51,6 +55,9 @@
     --negative-soft: #331a18;
     --warning-soft: #33280f;
     --warning-ink: #f3c669;
+    --ai: #b3a3f5;
+    --ai-soft: #1f1a33;
+    --ai-line: #3a3160;
 
     --series-1: #3987e5;
     --series-2: #d95926;
@@ -77,6 +84,9 @@
   --color-negative-soft: var(--negative-soft);
   --color-warning-soft: var(--warning-soft);
   --color-warning-ink: var(--warning-ink);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-ai-line: var(--ai-line);
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);
@@ -107,4 +117,15 @@ body {
   html {
     scroll-behavior: auto;
   }
+}
+
+@keyframes dl-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.dl-skeleton {
+  animation: dl-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-skeleton { animation: none; }
 }

@@ -16,6 +16,11 @@ import { JOB_SWITCH_FIELDS } from "./job-switch-roi/fields";
 import { parseJobSwitchInputs } from "./job-switch-roi/input-parsing";
 import { buildJobSwitchSessionResults } from "./job-switch-roi/session-results";
 import type { JobSwitchInputs } from "./job-switch-roi/types";
+import type { AnalysisContext } from "../ai/types";
+import type { CurrencyCode } from "../format";
+import { buildJobSwitchAnalysisContext } from "./job-switch-roi/analysis-context";
+import { buildMastersRoiAnalysisContext } from "./masters-roi/analysis-context";
+import type { MastersRoiInputs } from "./masters-roi/types";
 import type { FieldDefinition } from "./types";
 
 export interface CalculatorDefinition {
@@ -28,6 +33,8 @@ export interface CalculatorDefinition {
   parseInputs: (raw: unknown) => { ok: true; inputs: Record<string, number>; warnings: string[] } | { ok: false; errors: Record<string, string> };
   /** Computes the results snapshot stored with a saved session. */
   computeSessionResults: (inputs: Record<string, number>) => Record<string, unknown>;
+  /** Builds the deterministic context the AI analysis layer interprets (optional per calculator). */
+  buildAnalysisContext?: (inputs: Record<string, number>, currency: CurrencyCode) => AnalysisContext;
 }
 
 export const calculatorDefinitions: Readonly<Record<string, CalculatorDefinition>> = {
@@ -42,6 +49,7 @@ export const calculatorDefinitions: Readonly<Record<string, CalculatorDefinition
     },
     computeSessionResults: (inputs) =>
       buildMastersRoiSessionResults(inputs as unknown as Parameters<typeof buildMastersRoiSessionResults>[0]) as unknown as Record<string, unknown>,
+    buildAnalysisContext: (inputs, currency) => buildMastersRoiAnalysisContext(inputs as unknown as MastersRoiInputs, currency),
   },
   "job-switch-roi": {
     slug: "job-switch-roi",
@@ -54,11 +62,17 @@ export const calculatorDefinitions: Readonly<Record<string, CalculatorDefinition
     },
     computeSessionResults: (inputs) =>
       buildJobSwitchSessionResults(inputs as unknown as JobSwitchInputs) as unknown as Record<string, unknown>,
+    buildAnalysisContext: (inputs, currency) => buildJobSwitchAnalysisContext(inputs as unknown as JobSwitchInputs, currency),
   },
 };
 
+/**
+ * Looks up a calculator by slug. Also accepts snake_case identifiers
+ * ("masters_roi"), which some API clients prefer.
+ */
 export function getCalculatorDefinition(slug: string): CalculatorDefinition | undefined {
-  return Object.hasOwn(calculatorDefinitions, slug) ? calculatorDefinitions[slug] : undefined;
+  const normalised = slug.trim().toLowerCase().replace(/_/g, "-");
+  return Object.hasOwn(calculatorDefinitions, normalised) ? calculatorDefinitions[normalised] : undefined;
 }
 
 /** Field bounds converted from display units to model units (percent → decimal). */

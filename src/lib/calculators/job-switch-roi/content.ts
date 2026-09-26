@@ -85,11 +85,12 @@ export const JOB_SWITCH_FAQ: readonly FaqItem[] = [
   },
   {
     question: "Does this calculator use AI?",
-    answer: "No. Every number comes from transparent, deterministic formulas that run in your browser. The same inputs always give the same results.",
+    answer:
+      "Not for the math. Every number comes from transparent, deterministic formulas, and the same inputs always give the same results. An optional AI Decision Analysis can explain your results when you click \"Analyze My Result\"; it can only interpret the calculator's numbers, never change them.",
   },
   {
     question: "Are my inputs stored?",
     answer:
-      "Only if you choose to. Your inputs live in the page URL so you can bookmark or share a scenario. If you click \"Save calculation\", your inputs and the computed results are stored anonymously under a random link. No account, name or email is collected.",
+      "Only if you choose to. Your inputs live in the page URL so you can bookmark or share a scenario. If you click \"Save calculation\", your inputs and the computed results are stored anonymously under a random link. If you click \"Analyze My Result\", your inputs and the calculated results are sent to our AI provider to write the explanation; DecisionLens doesn't store them. No account, name or email is collected.",
   },
 ] as const;

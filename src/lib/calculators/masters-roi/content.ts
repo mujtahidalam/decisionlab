@@ -103,11 +103,11 @@ export const MASTERS_ROI_FAQ: readonly FaqItem[] = [
   {
     question: "Does this calculator use AI to calculate results?",
     answer:
-      "No. Every number is computed by a transparent, deterministic formula that runs in your browser. The same inputs always give the same results, and every assumption is listed on the page.",
+      "No. Every number is computed by a transparent, deterministic formula, and the same inputs always give the same results. An optional AI Decision Analysis can explain your results when you click \"Analyze My Result\": the server recalculates the numbers with the same formulas, and the AI may only interpret them — any AI response containing a number the calculator didn't produce is rejected.",
   },
   {
     question: "Are my inputs stored?",
     answer:
-      "Only if you choose to. Calculations run in your browser, and your inputs live in the page URL so you can bookmark or share a scenario. If you click \"Save calculation\", your inputs and the computed results are stored anonymously under a random link so you can come back to them. No account, name or email is ever collected.",
+      "Only if you choose to. Calculations run in your browser, and your inputs live in the page URL so you can bookmark or share a scenario. If you click \"Save calculation\", your inputs and the computed results are stored anonymously under a random link so you can come back to them. If you click \"Analyze My Result\", your inputs and the calculated results are sent to our AI provider to write the explanation; DecisionLens doesn't store them. No account, name or email is ever collected.",
   },
 ] as const;

@@ -234,6 +234,48 @@ status          enum      └──── ON DELETE CASCADE                     
 | `POST /api/calculators/:slug/sessions` | Save a calculation. Body `{ "inputs": {…} }` → `201 { id, createdAt, warnings }`; `400` with `fieldErrors` on invalid input; `404` unknown calculator; `409` not live; `413` body > 16 KB |
 | `GET /api/sessions/:id` | A saved calculation (inputs + results); `404` if unknown |
 
+## 6b. AI Decision Analysis layer
+
+The AI **interprets** results; it never calculates them.
+
+```
+AiAnalysisPanel (client) ── { calculator, inputs, currency } ──► POST /api/analyze
+                                                                   │ readJsonBody (16 KB) · rate limit
+                                                                   ▼
+                                                  services/analysis.runAnalysis
+                                                   │ definitions[slug].parseInputs   (strict validation)
+                                                   │ definitions[slug].buildAnalysisContext
+                                                   │    → engine, scenarios, sensitivity (deterministic)
+                                                   │    → values pre-formatted exactly as the UI shows them
+                                                   ▼
+                                                  lib/ai/analyzeDecision
+                                                   │ SYSTEM_PROMPT + compact JSON context
+                                                   │ LlmProvider.generateStructured (OpenAI, json_schema strict)
+                                                   │ validateDecisionAnalysis   (schema, lengths, no extra fields)
+                                                   │ checkNumbers               (every quantity must exist in context)
+                                                   ▼
+                                                  { analysis, meta } or a graceful error
+```
+
+| Piece | File |
+|---|---|
+| Contracts | `src/lib/ai/types.ts` (`AnalysisContext`, `DecisionAnalysis`) |
+| Prompt | `src/lib/ai/prompt.ts` |
+| Output schema + validator | `src/lib/ai/schema.ts` |
+| Numeric guard | `src/lib/ai/numeric-guard.ts` |
+| Provider interface / OpenAI | `src/lib/ai/providers/{types,openai}.ts` |
+| Env config (server-only) | `src/lib/ai/config.ts` |
+| Generic entry point | `src/lib/ai/analyzeDecision.ts` |
+| Context helpers | `src/lib/calculators/framework/analysis-context.ts` |
+| Per-calculator adapters | `src/lib/calculators/<slug>/analysis-context.ts` |
+| Service / route | `src/lib/services/analysis.ts`, `src/app/api/analyze/route.ts` |
+| UI | `src/components/calculator/AiAnalysisPanel.tsx` |
+
+`lib/ai` knows nothing about any specific calculator. To enable AI analysis for
+a new calculator, add an `analysis-context.ts` adapter and register it as
+`buildAnalysisContext` in `definitions.ts`; then render `<AiAnalysisPanel calculator="<slug>" …/>`.
+To change provider, implement `LlmProvider` and return it from `getAnalysisProvider()`.
+
 ## 7. Adding a new calculator
 
 1. Create `src/lib/calculators/<slug>/` with `types.ts`, `defaults.ts`
