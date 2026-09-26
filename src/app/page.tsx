@@ -52,7 +52,7 @@ export default function HomePage() {
       <section className="border-b border-line bg-surface">
         <Container className="grid items-center gap-12 py-16 sm:py-20 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
-            <Badge tone="accent">Now live: Master&apos;s Degree ROI Calculator</Badge>
+            <Badge tone="accent">Now live: Master&apos;s ROI and Job Switch calculators</Badge>
             <h1 className="mt-5 text-4xl leading-[1.08] font-semibold tracking-tight text-ink sm:text-5xl">
               Big decisions deserve math you can see.
             </h1>
@@ -67,8 +67,11 @@ export default function HomePage() {
               >
                 Is a master&apos;s worth it? Calculate →
               </Link>
-              <Link href="#how-it-works" className="rounded-lg border border-line-strong px-5 py-3 font-medium text-ink hover:bg-surface-2">
-                How it works
+              <Link
+                href="/calculators/job-switch-roi"
+                className="rounded-lg border border-line-strong px-5 py-3 font-medium text-ink hover:bg-surface-2"
+              >
+                Should I switch jobs? →
               </Link>
             </div>
           </div>
@@ -143,7 +146,7 @@ export default function HomePage() {
           <h2 id="calculators-title" className="text-3xl font-semibold tracking-tight">
             Calculators
           </h2>
-          <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {calculators.map((c) => (
               <li key={c.slug} className="flex">
                 {c.status === "live" ? (

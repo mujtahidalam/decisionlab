@@ -1,8 +1,10 @@
 # DecisionLens
 
 DecisionLens helps people evaluate major financial and career decisions using
-**transparent mathematical models and scenario analysis**. V1 ships the
-**Master's Degree ROI Calculator** at `/calculators/masters-roi`.
+**transparent mathematical models and scenario analysis**. Live calculators:
+
+- **Master's Degree ROI** — `/calculators/masters-roi`
+- **Job Switch ROI** — `/calculators/job-switch-roi`
 
 - Deterministic calculation engine in plain TypeScript. No LLM does any math.
 - Optimistic / expected / conservative scenarios
@@ -55,9 +57,11 @@ In short:
 
 ```
 src/lib/finance/                   pure financial primitives (step-growth earnings, exact root finding)
-src/lib/calculators/masters-roi/   models, engine, scenarios, sensitivity, validation, URL state, content
+src/lib/calculators/framework/     generic validation, scenarios, sensitivity, URL codec, input parser
+src/lib/calculators/<slug>/        per-calculator models, engine, scenarios, sensitivity, content
+src/features/shared/               shared client controller (state, URL sync, save/load)
 src/components/calculator/         reusable calculator UI (inputs, stats, scenarios, charts, methodology, FAQ)
-src/features/masters-roi/          client container wiring state → engine → components
+src/features/<slug>/               client containers wiring state → engine → components
 src/lib/db/                        schema, connections, seed, repositories (PostgreSQL via Drizzle)
 src/lib/services/                  session saving/loading used by the API routes
 src/app/api/                       JSON API (calculators, sessions)

@@ -64,7 +64,9 @@ decisionlens/
 │   │       ├── page.tsx             calculator directory
 │   │       └── masters-roi/page.tsx SEO shell + server-rendered calculator
 │   ├── features/
-│   │   └── masters-roi/MastersRoiCalculator.tsx   client container
+│   │   ├── shared/useCalculatorController.ts      state, URL sync, save/load (every calculator)
+│   │   ├── masters-roi/MastersRoiCalculator.tsx   client container
+│   │   └── job-switch-roi/JobSwitchCalculator.tsx client container
 │   ├── components/
 │   │   ├── layout/                  SiteHeader, SiteFooter, Container
 │   │   ├── ui/                      Card, Badge, NumberField, SelectField, Disclosure
@@ -90,6 +92,10 @@ decisionlens/
 │       └── calculators/
 │           ├── types.ts             shared calculator contracts (FieldDefinition, …)
 │           ├── registry.ts          list of calculators (nav, sitemap, landing)
+│           ├── definitions.ts       slug → formula version, fields, server hooks (DB + API)
+│           ├── framework/           generic bounds/validation, scenarios, sensitivity,
+│           │                        URL codec and strict input parser
+│           ├── job-switch-roi/      same file layout as masters-roi
 │           └── masters-roi/
 │               ├── types.ts         MastersRoiInputs / MastersRoiResult models
 │               ├── defaults.ts      default inputs + limits
@@ -162,6 +168,26 @@ One-at-a-time ("tornado") analysis: each assumption is moved to a low and a
 high value while all others stay at the user's inputs; the change in 10-year
 impact is recorded and assumptions are ranked by total swing.
 
+## 5b. Job Switch ROI model
+
+Time `t` is in years from today (the day you resign). Packages are
+salary + bonus + benefits.
+
+| Output | Formula |
+|---|---|
+| One-time net cost | `forfeited compensation + moving costs − signing bonus` (at t = 0) |
+| Income lost in the gap | current package earned over `[0, gap]` |
+| Net switching cost | one-time net cost + income lost in the gap |
+| Annual pay increase | `new package − current package·(1+g_cur)^⌊gap⌋` |
+| Net annual gain | annual pay increase − extra yearly costs of the new job |
+| Cumulative advantage A(t) | `−one-time + E_new(0, t−gap) − extra·max(0, t−gap) − E_cur(0, t)` |
+| 1/3/5-year impact | `A(1)`, `A(3)`, `A(5)` |
+| Break-even | the time **after which A stays ≥ 0** within 20 years (`stableNonNegativeFrom`), so a temporary lead from a signing bonus that is later lost never counts |
+
+Scenarios vary only the new job (the current job is known): optimistic —
+bonus +25%, raises +1 pp, start 1 month sooner; conservative — bonus −50%,
+raises −1 pp, start 2 months later, moving costs +25%.
+
 ## 6. Database
 
 ```
@@ -210,15 +236,19 @@ status          enum      └──── ON DELETE CASCADE                     
 
 ## 7. Adding a new calculator
 
-1. Create `src/lib/calculators/<slug>/` with `types.ts`, `defaults.ts`,
-   `fields.ts`, `engine.ts`, tests, and `content.ts`.
+1. Create `src/lib/calculators/<slug>/` with `types.ts`, `defaults.ts`
+   (incl. formula version), `fields.ts`, `validation.ts` (uses
+   `framework/bounds`), `engine.ts`, `scenarios.ts` / `sensitivity.ts` /
+   `url-state.ts` / `input-parsing.ts` (thin wrappers over `framework/`),
+   `session-results.ts`, `content.ts` and tests.
 2. Register it in `src/lib/calculators/registry.ts` (drives the directory,
    landing page and sitemap) and add its model to
    `src/lib/calculators/definitions.ts`, then run `npm run db:seed`.
-3. Create `src/features/<slug>/<Name>Calculator.tsx` composing the generic
-   `components/calculator/*` blocks.
-4. Add `src/app/calculators/<slug>/page.tsx` using `buildCalculatorMetadata()`
-   and `buildCalculatorJsonLd()` from `lib/seo.ts`.
+3. Create `src/features/<slug>/<Name>Calculator.tsx`: call
+   `useCalculatorController(...)` and compose `InputsCard`, `SaveShareBar`,
+   `StatGrid`, `CumulativeChart`, `ScenarioTable`, `TornadoChart`, `AssumptionList`.
+4. Add `src/app/calculators/<slug>/page.tsx` with `buildPageMetadata()` and
+   `CalculatorPageShell` (breadcrumbs, methodology, FAQ, JSON-LD).
 
 ## 8. Quality gates
 

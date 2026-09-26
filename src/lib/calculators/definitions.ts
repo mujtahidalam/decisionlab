@@ -11,6 +11,11 @@ import { DEFAULT_INPUTS, MASTERS_ROI_FORMULA_VERSION } from "./masters-roi/defau
 import { MASTERS_ROI_FIELDS } from "./masters-roi/fields";
 import { parseMastersRoiInputs } from "./masters-roi/input-parsing";
 import { buildMastersRoiSessionResults } from "./masters-roi/session-results";
+import { JOB_SWITCH_DEFAULT_INPUTS, JOB_SWITCH_FORMULA_VERSION } from "./job-switch-roi/defaults";
+import { JOB_SWITCH_FIELDS } from "./job-switch-roi/fields";
+import { parseJobSwitchInputs } from "./job-switch-roi/input-parsing";
+import { buildJobSwitchSessionResults } from "./job-switch-roi/session-results";
+import type { JobSwitchInputs } from "./job-switch-roi/types";
 import type { FieldDefinition } from "./types";
 
 export interface CalculatorDefinition {
@@ -37,6 +42,18 @@ export const calculatorDefinitions: Readonly<Record<string, CalculatorDefinition
     },
     computeSessionResults: (inputs) =>
       buildMastersRoiSessionResults(inputs as unknown as Parameters<typeof buildMastersRoiSessionResults>[0]) as unknown as Record<string, unknown>,
+  },
+  "job-switch-roi": {
+    slug: "job-switch-roi",
+    formulaVersion: JOB_SWITCH_FORMULA_VERSION,
+    fields: JOB_SWITCH_FIELDS,
+    defaults: JOB_SWITCH_DEFAULT_INPUTS,
+    parseInputs: (raw) => {
+      const parsed = parseJobSwitchInputs(raw);
+      return parsed.ok ? { ok: true, inputs: { ...parsed.inputs }, warnings: parsed.warnings } : parsed;
+    },
+    computeSessionResults: (inputs) =>
+      buildJobSwitchSessionResults(inputs as unknown as JobSwitchInputs) as unknown as Record<string, unknown>,
   },
 };
 

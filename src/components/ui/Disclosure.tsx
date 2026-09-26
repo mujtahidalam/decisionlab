@@ -1,9 +1,20 @@
-import type { ReactNode } from "react";
+"use client";
 
-/** Native <details> disclosure: accessible, works without JavaScript. */
-export function Disclosure({ summary, children, defaultOpen = false }: { summary: ReactNode; children: ReactNode; defaultOpen?: boolean }) {
+import { useEffect, useRef, type ReactNode } from "react";
+
+/**
+ * Native <details> disclosure: accessible and works without JavaScript.
+ * The open state belongs to the user; `forceOpen` can only open it (e.g. to
+ * reveal an error) and never closes it, so it can't collapse mid-edit.
+ */
+export function Disclosure({ summary, children, forceOpen = false }: { summary: ReactNode; children: ReactNode; forceOpen?: boolean }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (forceOpen && ref.current) ref.current.open = true;
+  }, [forceOpen]);
+
   return (
-    <details className="group rounded-xl border border-line bg-surface-2/50" open={defaultOpen}>
+    <details ref={ref} className="group rounded-xl border border-line bg-surface-2/50">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
         {summary}
         <svg className="h-4 w-4 shrink-0 text-ink-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" aria-hidden="true">

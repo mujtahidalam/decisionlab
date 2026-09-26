@@ -1,5 +1,5 @@
 import type { ValidationResult } from "../types";
-import { toDisplayValue } from "../field-units";
+import { validateBounds } from "../framework/bounds";
 import { MASTERS_ROI_FIELDS } from "./fields";
 import type { MastersRoiInputKey, MastersRoiInputs } from "./types";
 
@@ -12,19 +12,7 @@ import type { MastersRoiInputKey, MastersRoiInputs } from "./types";
 export function validateMastersRoiInputs(
   inputs: MastersRoiInputs,
 ): ValidationResult<MastersRoiInputKey> {
-  const errors: Partial<Record<MastersRoiInputKey, string>> = {};
-
-  for (const field of MASTERS_ROI_FIELDS) {
-    const raw = inputs[field.key];
-    if (typeof raw !== "number" || !Number.isFinite(raw)) {
-      errors[field.key] = `${field.label} must be a number.`;
-      continue;
-    }
-    const shown = toDisplayValue(field, raw);
-    if (shown < field.min || shown > field.max) {
-      errors[field.key] = `${field.label} must be between ${field.min} and ${field.max}.`;
-    }
-  }
+  const errors = validateBounds(MASTERS_ROI_FIELDS, inputs);
 
   const warnings: string[] = [];
   const valid = Object.keys(errors).length === 0;

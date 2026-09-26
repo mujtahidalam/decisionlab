@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstNonNegative, normaliseBreakpoints } from "./piecewise";
+import { firstNonNegative, normaliseBreakpoints, stableNonNegativeFrom } from "./piecewise";
 
 describe("normaliseBreakpoints", () => {
   it("sorts, de-duplicates, clips to range and keeps the endpoints", () => {
@@ -36,5 +36,23 @@ describe("firstNonNegative", () => {
 
   it("finds a root that lands exactly on a breakpoint", () => {
     expect(firstNonNegative((t) => t - 4, [4], 0, 10)).toBeCloseTo(4, 12);
+  });
+});
+
+describe("stableNonNegativeFrom", () => {
+  it("equals the first crossing for a function that turns positive once", () => {
+    expect(stableNonNegativeFrom((t) => t - 2.5, [], 0, 10)).toBeCloseTo(2.5, 12);
+  });
+
+  it("ignores a temporary lead that is later lost", () => {
+    // +5 at t=0, falls to −5 at t=2, recovers through 0 at t=4.5
+    const f = (t: number) => (t < 2 ? 5 - 5 * t : -5 + 2 * (t - 2));
+    expect(stableNonNegativeFrom(f, [2], 0, 10)).toBeCloseTo(4.5, 12);
+  });
+
+  it("returns start when never negative, null when negative at the end", () => {
+    expect(stableNonNegativeFrom(() => 1, [3], 0, 10)).toBe(0);
+    expect(stableNonNegativeFrom((t) => 5 - t, [], 0, 10)).toBeNull();
+    expect(stableNonNegativeFrom((t) => t, [], 5, 1)).toBeNull();
   });
 });

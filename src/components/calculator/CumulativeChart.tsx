@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { linearScale, niceTicks } from "@/lib/chart/scale";
-import { formatCurrencyCompact, formatSignedCurrency, formatYears, type CurrencyCode } from "@/lib/format";
+import { formatCurrencyCompact, formatSignedCurrency, type CurrencyCode } from "@/lib/format";
 
 export interface ChartSeries {
   id: string;
@@ -12,10 +12,25 @@ export interface ChartSeries {
   points: readonly { t: number; advantage: number }[];
 }
 
+/** How a calculator's time axis should be labelled. Times are in years from t = 0. */
+export interface ChartTimeAxis {
+  /** Optional shaded period from t = 0 (e.g. studying, or the gap between jobs). */
+  phase?: { end: number; label: string };
+  /** Optional vertical rule marking a key event (e.g. graduation). */
+  marker?: { t: number; label: string };
+  /** x-axis tick label, e.g. t => (t === 0 ? "Start" : `Yr ${t}`). */
+  tickLabel: (t: number) => string;
+  /** Tooltip heading for a hovered time. */
+  describeTime: (t: number) => string;
+  /** Rows of the accessible data table. */
+  table: { header: string; times: readonly number[]; label: (t: number) => string };
+  /** Plain-language explanation shown under the chart. */
+  caption: string;
+}
+
 export interface CumulativeChartProps {
   series: readonly ChartSeries[];
-  /** Time (years from start) where study ends; shaded before, marked with a rule. */
-  studyEnd: number;
+  axis: ChartTimeAxis;
   currency: CurrencyCode;
   title: string;
 }
@@ -52,7 +67,7 @@ function spreadLabels(ys: number[], minGap: number): number[] {
  * Line chart of cumulative advantage over time for one or more scenarios.
  * Renders in real pixels (ResizeObserver) so text stays legible on phones.
  */
-export function CumulativeChart({ series, studyEnd, currency, title }: CumulativeChartProps) {
+export function CumulativeChart({ series, axis, currency, title }: CumulativeChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(720);
   const [hoverT, setHoverT] = useState<number | null>(null);
@@ -102,8 +117,6 @@ export function CumulativeChart({ series, studyEnd, currency, title }: Cumulativ
     setHoverT(Math.min(tMax, Math.max(0, (px / rect.width) * tMax)));
   };
 
-  // Yearly rows for the accessible data table.
-  const tableTimes = Array.from({ length: Math.floor(tMax - studyEnd) + 1 }, (_, k) => studyEnd + k);
 
   return (
     <figure className="m-0">
@@ -119,15 +132,31 @@ export function CumulativeChart({ series, studyEnd, currency, title }: Cumulativ
       <div ref={wrapRef} className="relative w-full">
         <svg viewBox={`0 0 ${width} ${HEIGHT}`} role="img" aria-label={title} className="block h-auto w-full overflow-visible">
           <g transform={`translate(${margin.left},${margin.top})`}>
-            {/* Study period shading */}
-            <rect x={0} y={0} width={Math.max(0, x(studyEnd))} height={innerH} fill="var(--surface-2)" />
-            <text x={4} y={-10} fontSize={11} fill="var(--ink-3)">
-              Studying
-            </text>
-            <line x1={x(studyEnd)} x2={x(studyEnd)} y1={-4} y2={innerH} stroke="var(--line-strong)" strokeDasharray="3 3" />
-            <text x={x(studyEnd) + 4} y={-10} fontSize={11} fill="var(--ink-3)">
-              Graduation
-            </text>
+            {/* Phase shading and event marker */}
+            {axis.phase && axis.phase.end > 0 ? (
+              <>
+                <rect x={0} y={0} width={Math.max(0, x(axis.phase.end))} height={innerH} fill="var(--surface-2)" />
+                {/* Skip the label when the phase is too narrow to hold it without colliding with the marker label. */}
+                {x(axis.phase.end) > 90 ? (
+                  <text x={4} y={-10} fontSize={11} fill="var(--ink-3)">
+                    {axis.phase.label}
+                  </text>
+                ) : null}
+              </>
+            ) : null}
+            {axis.marker ? (
+              <>
+                <line x1={x(axis.marker.t)} x2={x(axis.marker.t)} y1={-4} y2={innerH} stroke="var(--line-strong)" strokeDasharray="3 3" />
+                <text
+                  x={x(axis.marker.t) + 4}
+                  y={-10}
+                  fontSize={11}
+                  fill="var(--ink-3)"
+                >
+                  {axis.marker.label}
+                </text>
+              </>
+            ) : null}
 
             {/* Grid + y axis */}
             {yTicks.map((v) => (
@@ -142,7 +171,7 @@ export function CumulativeChart({ series, studyEnd, currency, title }: Cumulativ
             {/* x axis */}
             {xTicks.map((t) => (
               <text key={t} x={x(t)} y={innerH + 20} textAnchor="middle" fontSize={11} fill="var(--ink-3)" className="tabular">
-                {t === 0 ? "Start" : `Yr ${t}`}
+                {axis.tickLabel(t)}
               </text>
             ))}
 
@@ -189,9 +218,7 @@ export function CumulativeChart({ series, studyEnd, currency, title }: Cumulativ
             }}
           >
             <p className="font-medium text-ink">
-              {hovered[0].p.t <= studyEnd
-                ? `${formatYears(hovered[0].p.t)} into the program`
-                : `${formatYears(hovered[0].p.t - studyEnd)} after graduation`}
+              {axis.describeTime(hovered[0].p.t)}
             </p>
             <ul className="mt-1.5 space-y-1">
               {hovered.map(({ s, p }) => (
@@ -208,10 +235,7 @@ export function CumulativeChart({ series, studyEnd, currency, title }: Cumulativ
         ) : null}
       </div>
 
-      <figcaption className="mt-2 text-xs text-ink-3">
-        Cumulative cash of the degree path minus the no-degree path. Below zero the degree is still paying itself back;
-        where a line crosses zero it has broken even.
-      </figcaption>
+      <figcaption className="mt-2 text-xs text-ink-3">{axis.caption}</figcaption>
 
       <details className="mt-3 text-xs">
         <summary className="cursor-pointer text-ink-2 hover:text-ink">Show data table</summary>
@@ -220,17 +244,17 @@ export function CumulativeChart({ series, studyEnd, currency, title }: Cumulativ
             <caption className="sr-only">{title}</caption>
             <thead>
               <tr className="text-ink-3">
-                <th scope="col" className="py-1 text-left font-medium">After graduation</th>
+                <th scope="col" className="py-1 text-left font-medium">{axis.table.header}</th>
                 {series.map((s) => (
                   <th key={s.id} scope="col" className="py-1 font-medium">{s.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {tableTimes.map((t) => (
+              {axis.table.times.map((t) => (
                 <tr key={t} className="border-t border-line">
                   <th scope="row" className="py-1 text-left font-normal text-ink-2">
-                    {t === studyEnd ? "Graduation" : formatYears(t - studyEnd)}
+                    {axis.table.label(t)}
                   </th>
                   {series.map((s) => (
                     <td key={s.id} className="py-1 text-ink">{formatSignedCurrency(nearest(s.points, t).advantage, currency)}</td>

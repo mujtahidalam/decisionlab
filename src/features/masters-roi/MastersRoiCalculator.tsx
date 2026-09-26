@@ -3,49 +3,33 @@
 /**
  * Client container for the Master's ROI calculator.
  *
- * Responsibilities: hold input state, sync it to the URL, call the pure engine,
- * and compose generic presentational components. It performs no math itself
- * beyond choosing what to display.
+ * State, URL sharing and saving come from the shared calculator controller;
+ * this file only maps engine results onto generic presentational components.
+ * It performs no math itself.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AssumptionList } from "@/components/calculator/AssumptionList";
 import { CalculatorLayout } from "@/components/calculator/CalculatorLayout";
-import { CumulativeChart, type ChartSeries } from "@/components/calculator/CumulativeChart";
-import { InputPanel } from "@/components/calculator/InputPanel";
+import { CumulativeChart, type ChartSeries, type ChartTimeAxis } from "@/components/calculator/CumulativeChart";
+import { InputsCard } from "@/components/calculator/InputsCard";
+import { SCENARIO_COLORS, toneOf } from "@/components/calculator/presentation";
+import { SaveShareBar } from "@/components/calculator/SaveShareBar";
 import { ScenarioTable, type ScenarioRow } from "@/components/calculator/ScenarioTable";
 import { StatGrid, type StatItem } from "@/components/calculator/StatGrid";
 import { TornadoChart } from "@/components/calculator/TornadoChart";
+import { WarningList } from "@/components/calculator/WarningList";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { SelectField } from "@/components/ui/SelectField";
+import { useCalculatorController } from "@/features/shared/useCalculatorController";
 import { DEFAULT_INPUTS } from "@/lib/calculators/masters-roi/defaults";
 import { MASTERS_ROI_FIELDS } from "@/lib/calculators/masters-roi/fields";
-import { runScenarios, type ScenarioId, type ScenarioOutcome } from "@/lib/calculators/masters-roi/scenarios";
+import { parseMastersRoiInputs } from "@/lib/calculators/masters-roi/input-parsing";
+import { runScenarios, type ScenarioOutcome } from "@/lib/calculators/masters-roi/scenarios";
 import { analyseSensitivity } from "@/lib/calculators/masters-roi/sensitivity";
 import type { MastersRoiInputKey, MastersRoiInputs, MastersRoiResult } from "@/lib/calculators/masters-roi/types";
-import { parseUrlState, serializeUrlState } from "@/lib/calculators/masters-roi/url-state";
+import { mastersRoiUrlCodec } from "@/lib/calculators/masters-roi/url-state";
 import { validateMastersRoiInputs } from "@/lib/calculators/masters-roi/validation";
-import { parseMastersRoiInputs } from "@/lib/calculators/masters-roi/input-parsing";
-import { fetchCalculatorSession, saveCalculatorSession } from "@/lib/api-client/sessions";
 import type { SensitivityAnalysis } from "@/lib/calculators/types";
-import {
-  CURRENCIES,
-  DEFAULT_CURRENCY,
-  currencySymbol,
-  formatCurrency,
-  formatPercent,
-  formatSignedCurrency,
-  formatYears,
-  formatYearsShort,
-  isCurrencyCode,
-  type CurrencyCode,
-} from "@/lib/format";
-
-const SCENARIO_COLORS: Record<ScenarioId, string> = {
-  optimistic: "var(--series-3)",
-  expected: "var(--series-1)",
-  conservative: "var(--series-2)",
-};
+import { formatCurrency, formatPercent, formatSignedCurrency, formatYears, formatYearsShort } from "@/lib/format";
 
 interface Computed {
   expected: MastersRoiResult;
@@ -59,131 +43,40 @@ function compute(inputs: MastersRoiInputs): Computed {
   return { expected, scenarios, sensitivity: analyseSensitivity(inputs) };
 }
 
-type Tone = "positive" | "negative" | "neutral";
-const tone = (v: number): Tone => (v > 0.5 ? "positive" : v < -0.5 ? "negative" : "neutral");
-
-const SESSION_PARAM = "session";
-const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/** A saved calculation whose inputs are currently shown (so the URL can point at it). */
-interface ActiveSession {
-  id: string;
-  inputs: MastersRoiInputs;
-  createdAt: string;
-}
-
-const sameInputs = (a: MastersRoiInputs, b: MastersRoiInputs) =>
-  (Object.keys(a) as MastersRoiInputKey[]).every((k) => a[k] === b[k]);
-
-type SaveState = { status: "idle" } | { status: "saving" } | { status: "error"; message: string };
-
 function breakEvenText(r: MastersRoiResult): string {
   if (!r.breakEven.reached || r.breakEven.yearsAfterGraduation === null) return "Not within 50 yrs";
   if (r.breakEven.yearsAfterGraduation === 0) return "Immediately";
   return formatYearsShort(r.breakEven.yearsAfterGraduation);
 }
 
+function timeAxis(studyEnd: number, horizonEnd: number): ChartTimeAxis {
+  return {
+    phase: { end: studyEnd, label: "Studying" },
+    marker: { t: studyEnd, label: "Graduation" },
+    tickLabel: (t) => (t === 0 ? "Start" : `Yr ${t}`),
+    describeTime: (t) => (t <= studyEnd ? `${formatYears(t)} into the program` : `${formatYears(t - studyEnd)} after graduation`),
+    table: {
+      header: "After graduation",
+      times: Array.from({ length: Math.floor(horizonEnd - studyEnd) + 1 }, (_, k) => studyEnd + k),
+      label: (t) => (t === studyEnd ? "Graduation" : formatYears(t - studyEnd)),
+    },
+    caption:
+      "Cumulative cash of the degree path minus the no-degree path. Below zero the degree is still paying itself back; where a line crosses zero it has broken even.",
+  };
+}
+
 export function MastersRoiCalculator() {
-  const [inputs, setInputs] = useState<MastersRoiInputs>({ ...DEFAULT_INPUTS });
-  const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY);
-  const [hydrated, setHydrated] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Load shared state from the URL once, after hydration (keeps the page statically renderable).
-  // A `?session=<id>` link loads a saved calculation from the database.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const state = parseUrlState(params);
-    setInputs(state.inputs);
-    setCurrency(state.currency);
-
-    const sessionId = params.get(SESSION_PARAM);
-    if (!sessionId) {
-      setHydrated(true);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const result = SESSION_ID_RE.test(sessionId)
-        ? await fetchCalculatorSession(sessionId)
-        : ({ ok: false, error: "Session not found." } as const);
-      if (cancelled) return;
-      const parsed = result.ok && result.data.calculatorSlug === "masters-roi" ? parseMastersRoiInputs(result.data.inputs) : null;
-      if (result.ok && parsed?.ok) {
-        setInputs(parsed.inputs);
-        setActiveSession({ id: result.data.id, inputs: parsed.inputs, createdAt: result.data.createdAt });
-      } else {
-        setLoadError("That saved calculation couldn't be loaded. Showing default values instead.");
-      }
-      setHydrated(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const validation = useMemo(() => validateMastersRoiInputs(inputs), [inputs]);
-
-  // Once inputs diverge from a loaded/saved session, the session no longer describes the page.
-  const sessionIsCurrent = activeSession !== null && sameInputs(activeSession.inputs, inputs);
-
-  // Keep URL in sync (only with valid inputs, so shared links always work).
-  useEffect(() => {
-    if (!hydrated || !validation.valid) return;
-    const params = new URLSearchParams(serializeUrlState({ inputs: sessionIsCurrent ? DEFAULT_INPUTS : inputs, currency }));
-    if (sessionIsCurrent) params.set(SESSION_PARAM, activeSession.id);
-    const qs = params.toString();
-    const url = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
-    window.history.replaceState(null, "", url);
-  }, [inputs, currency, hydrated, validation.valid, sessionIsCurrent, activeSession]);
-
-  const saveCalculation = async () => {
-    if (!validation.valid) return;
-    setSaveState({ status: "saving" });
-    const snapshot = { ...inputs };
-    const result = await saveCalculatorSession("masters-roi", { ...snapshot });
-    if (result.ok) {
-      setActiveSession({ id: result.data.id, inputs: snapshot, createdAt: result.data.createdAt });
-      setSaveState({ status: "idle" });
-    } else {
-      setSaveState({ status: "error", message: result.error });
-    }
-  };
-
-  // Results: recompute on valid inputs; otherwise keep showing the last valid results.
-  const lastGood = useRef<Computed | null>(null);
-  const computed = useMemo(() => {
-    if (validation.valid) lastGood.current = compute(inputs);
-    return lastGood.current ?? compute(DEFAULT_INPUTS);
-  }, [inputs, validation.valid]);
-  const stale = !validation.valid;
-
-  const onChange = useCallback((key: MastersRoiInputKey, value: number) => {
-    setInputs((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  const reset = () => {
-    setInputs({ ...DEFAULT_INPUTS });
-    setCurrency(DEFAULT_CURRENCY);
-  };
-
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* Clipboard unavailable (e.g. insecure context): the URL bar already holds the link. */
-    }
-  };
-
+  const c = useCalculatorController<MastersRoiInputKey, MastersRoiInputs, Computed>({
+    slug: "masters-roi",
+    defaults: DEFAULT_INPUTS,
+    codec: mastersRoiUrlCodec,
+    validate: validateMastersRoiInputs,
+    parseInputs: parseMastersRoiInputs,
+    compute,
+  });
+  const { computed, currency, stale, session } = c;
   const r = computed.expected;
-  const sym = currencySymbol(currency);
 
-  // ---- Headline metrics -------------------------------------------------------
   const stats: StatItem[] = [
     {
       id: "education",
@@ -191,56 +84,27 @@ export function MastersRoiCalculator() {
       value: formatCurrency(r.totalEducationCost, currency),
       detail: `Tuition + ${formatCurrency(r.totalLivingCost, currency)} living − scholarship`,
     },
-    {
-      id: "opportunity",
-      label: "Opportunity cost",
-      value: formatCurrency(r.opportunityCost, currency),
-      detail: "Salary you give up while studying",
-    },
-    {
-      id: "net",
-      label: "Net investment",
-      value: formatCurrency(r.netInvestment, currency),
-      detail: "Education cost + opportunity cost",
-    },
+    { id: "opportunity", label: "Opportunity cost", value: formatCurrency(r.opportunityCost, currency), detail: "Salary you give up while studying" },
+    { id: "net", label: "Net investment", value: formatCurrency(r.netInvestment, currency), detail: "Education cost + opportunity cost" },
     {
       id: "increase",
       label: "Annual income increase",
       value: formatSignedCurrency(r.annualIncomeIncrease, currency),
-      tone: tone(r.annualIncomeIncrease),
+      tone: toneOf(r.annualIncomeIncrease),
       detail: `First year, vs. ${formatCurrency(r.counterfactualSalaryAtStart, currency)} without the degree`,
     },
-    {
-      id: "breakeven",
-      label: "Break-even period",
-      value: breakEvenText(r),
-      tone: r.breakEven.reached ? "neutral" : "negative",
-      detail: "After graduation",
-    },
-    {
-      id: "impact5",
-      label: "5-year impact",
-      value: formatSignedCurrency(r.impact5Year, currency),
-      tone: tone(r.impact5Year),
-      detail: "Net position 5 years after graduating",
-    },
-    {
-      id: "impact10",
-      label: "10-year impact",
-      value: formatSignedCurrency(r.impact10Year, currency),
-      tone: tone(r.impact10Year),
-      detail: "Net position 10 years after graduating",
-    },
+    { id: "breakeven", label: "Break-even period", value: breakEvenText(r), tone: r.breakEven.reached ? "neutral" : "negative", detail: "After graduation" },
+    { id: "impact5", label: "5-year impact", value: formatSignedCurrency(r.impact5Year, currency), tone: toneOf(r.impact5Year), detail: "Net position 5 years after graduating" },
+    { id: "impact10", label: "10-year impact", value: formatSignedCurrency(r.impact10Year, currency), tone: toneOf(r.impact10Year), detail: "Net position 10 years after graduating" },
     {
       id: "return10",
       label: "10-year ROI",
       value: r.return10Year === null ? "—" : formatPercent(r.return10Year, 0),
-      tone: r.return10Year === null ? "neutral" : tone(r.return10Year),
+      tone: r.return10Year === null ? "neutral" : toneOf(r.return10Year),
       detail: r.return10Year === null ? "No net investment to return" : "10-year impact ÷ net investment",
     },
   ];
 
-  // ---- Scenarios --------------------------------------------------------------
   const scenarioColumns = computed.scenarios.map((s) => ({
     id: s.scenario.id,
     label: s.scenario.label,
@@ -254,22 +118,10 @@ export function MastersRoiCalculator() {
     { label: "Total education cost", values: results.map((x) => formatCurrency(x.totalEducationCost, currency)) },
     { label: "Opportunity cost", values: results.map((x) => formatCurrency(x.opportunityCost, currency)) },
     { label: "Net investment", values: results.map((x) => formatCurrency(x.netInvestment, currency)) },
-    {
-      label: "Annual income increase",
-      values: results.map((x) => formatSignedCurrency(x.annualIncomeIncrease, currency)),
-      tones: results.map((x) => tone(x.annualIncomeIncrease)),
-    },
+    { label: "Annual income increase", values: results.map((x) => formatSignedCurrency(x.annualIncomeIncrease, currency)), tones: results.map((x) => toneOf(x.annualIncomeIncrease)) },
     { label: "Break-even (after graduation)", values: results.map(breakEvenText) },
-    {
-      label: "5-year impact",
-      values: results.map((x) => formatSignedCurrency(x.impact5Year, currency)),
-      tones: results.map((x) => tone(x.impact5Year)),
-    },
-    {
-      label: "10-year impact",
-      values: results.map((x) => formatSignedCurrency(x.impact10Year, currency)),
-      tones: results.map((x) => tone(x.impact10Year)),
-    },
+    { label: "5-year impact", values: results.map((x) => formatSignedCurrency(x.impact5Year, currency)), tones: results.map((x) => toneOf(x.impact5Year)) },
+    { label: "10-year impact", values: results.map((x) => formatSignedCurrency(x.impact10Year, currency)), tones: results.map((x) => toneOf(x.impact10Year)) },
   ];
   const chartSeries: ChartSeries[] = computed.scenarios.map((s) => ({
     id: s.scenario.id,
@@ -277,33 +129,8 @@ export function MastersRoiCalculator() {
     color: SCENARIO_COLORS[s.scenario.id],
     points: s.result.timeline,
   }));
-
   const conservative = computed.scenarios.find((s) => s.scenario.id === "conservative")!.result;
-
-  // ---- Render -------------------------------------------------------------------
-  const inputsPanel = (
-    <Card as="section" aria-labelledby="inputs-title">
-      <CardHeader
-        id="inputs-title"
-        title="Your numbers"
-        description="Results update as you type."
-        action={
-          <button type="button" onClick={reset} className="rounded-md px-2 py-1 text-xs font-medium text-ink-2 hover:bg-surface-2 hover:text-ink">
-            Reset
-          </button>
-        }
-      />
-      <div className="space-y-5">
-        <SelectField
-          label="Currency"
-          value={currency}
-          options={CURRENCIES.map((c) => ({ value: c.code, label: `${c.code} — ${c.label}` }))}
-          onChange={(v) => isCurrencyCode(v) && setCurrency(v)}
-        />
-        <InputPanel fields={MASTERS_ROI_FIELDS} values={inputs} errors={validation.errors} onChange={onChange} currencySymbol={sym} />
-      </div>
-    </Card>
-  );
+  const studyEnd = r.inputs.studyDurationYears;
 
   const resultsPanel = (
     <div className={`space-y-6 transition-opacity ${stale ? "opacity-50" : ""}`} aria-live="polite">
@@ -333,55 +160,24 @@ export function MastersRoiCalculator() {
         </p>
         <p className="mt-2 text-sm text-ink-2">
           Ten years after graduating you would be{" "}
-          <strong className={r.impact10Year >= 0 ? "text-positive" : "text-negative"}>
-            {formatSignedCurrency(r.impact10Year, currency)}
-          </strong>{" "}
+          <strong className={r.impact10Year >= 0 ? "text-positive" : "text-negative"}>{formatSignedCurrency(r.impact10Year, currency)}</strong>{" "}
           compared with not doing the degree. In the conservative scenario:{" "}
           <strong className={conservative.impact10Year >= 0 ? "text-positive" : "text-negative"}>
             {formatSignedCurrency(conservative.impact10Year, currency)}
           </strong>
           .
         </p>
-        {validation.warnings.length > 0 ? (
-          <ul className="mt-4 space-y-2">
-            {validation.warnings.map((w) => (
-              <li key={w} className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning-ink">
-                <span aria-hidden="true">⚠ </span>
-                {w}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={saveCalculation}
-            disabled={stale || sessionIsCurrent || saveState.status === "saving"}
-            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saveState.status === "saving" ? "Saving…" : sessionIsCurrent ? "Saved ✓" : "Save calculation"}
-          </button>
-          <button
-            type="button"
-            onClick={copyLink}
-            className="rounded-lg border border-line-strong px-3 py-2 text-sm font-medium text-ink hover:bg-surface-2"
-          >
-            {copied ? "Link copied" : "Copy link"}
-          </button>
-          <a href="#how-it-works" className="rounded-lg border border-line-strong px-3 py-2 text-sm font-medium text-ink hover:bg-surface-2">
-            How this is calculated
-          </a>
-        </div>
-        <div aria-live="polite" className="mt-3 text-xs">
-          {sessionIsCurrent ? (
-            <p className="text-ink-2">
-              Saved calculation from {new Date(activeSession.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" })}. The
-              page link now opens it; editing any input starts a new, unsaved calculation.
-            </p>
-          ) : null}
-          {saveState.status === "error" ? <p className="text-negative">Couldn&apos;t save: {saveState.message}</p> : null}
-          {loadError ? <p className="text-negative">{loadError}</p> : null}
-        </div>
+        <WarningList warnings={c.validation.warnings} />
+        <SaveShareBar
+          disabled={stale}
+          isSaved={session.isCurrent}
+          savedAt={session.active?.createdAt ?? null}
+          saveState={session.saveState}
+          loadError={session.loadError}
+          copied={session.copied}
+          onSave={session.save}
+          onCopy={session.copyLink}
+        />
       </Card>
 
       <section aria-labelledby="metrics-title">
@@ -397,12 +193,7 @@ export function MastersRoiCalculator() {
           title="Cumulative financial impact over time"
           description="How far ahead or behind the degree leaves you, from the first day of study to 10 years after graduation."
         />
-        <CumulativeChart
-          series={chartSeries}
-          studyEnd={r.inputs.studyDurationYears}
-          currency={currency}
-          title="Cumulative financial impact by scenario"
-        />
+        <CumulativeChart series={chartSeries} axis={timeAxis(studyEnd, studyEnd + 10)} currency={currency} title="Cumulative financial impact by scenario" />
       </Card>
 
       <Card as="section" aria-labelledby="scenarios-title">
@@ -429,15 +220,26 @@ export function MastersRoiCalculator() {
       </Card>
 
       <Card as="section" aria-labelledby="assumptions-title">
-        <CardHeader
-          id="assumptions-title"
-          title="Assumptions used"
-          description="Everything the model assumes, with the values it used for your expected scenario."
-        />
+        <CardHeader id="assumptions-title" title="Assumptions used" description="Everything the model assumes, with the values it used for your expected scenario." />
         <AssumptionList assumptions={r.assumptions} currency={currency} />
       </Card>
     </div>
   );
 
-  return <CalculatorLayout inputs={inputsPanel} results={resultsPanel} />;
+  return (
+    <CalculatorLayout
+      inputs={
+        <InputsCard
+          fields={MASTERS_ROI_FIELDS}
+          values={c.inputs}
+          errors={c.validation.errors}
+          onChange={c.setInput}
+          currency={currency}
+          onCurrencyChange={c.setCurrency}
+          onReset={c.reset}
+        />
+      }
+      results={resultsPanel}
+    />
+  );
 }

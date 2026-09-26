@@ -48,11 +48,32 @@ export function InputPanel<K extends string>({
   const core = fields.filter((f) => f.group === "core");
   const advanced = fields.filter((f) => f.group === "advanced");
 
+  // Group consecutive core fields by their optional section heading.
+  const sections: { title?: string; fields: FieldDefinition<K>[] }[] = [];
+  for (const field of core) {
+    const last = sections[sections.length - 1];
+    if (last && last.title === field.section) last.fields.push(field);
+    else sections.push({ title: field.section, fields: [field] });
+  }
+
   return (
     <div className="space-y-5">
-      {core.map(render)}
+      {sections.map((section, i) =>
+        section.title ? (
+          <div key={section.title} className={i > 0 ? "border-t border-line pt-5" : undefined}>
+            <fieldset>
+              <legend className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{section.title}</legend>
+              <div className="mt-3 space-y-5">{section.fields.map(render)}</div>
+            </fieldset>
+          </div>
+        ) : (
+          <div key={`s${i}`} className="space-y-5">
+            {section.fields.map(render)}
+          </div>
+        ),
+      )}
       {advanced.length > 0 ? (
-        <Disclosure summary={advancedLabel} defaultOpen={advanced.some((f) => errors[f.key])}>
+        <Disclosure summary={advancedLabel} forceOpen={advanced.some((f) => errors[f.key])}>
           <div className="space-y-5">{advanced.map(render)}</div>
         </Disclosure>
       ) : null}

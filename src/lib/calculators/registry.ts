@@ -19,6 +19,17 @@ export const calculators: readonly CalculatorMeta[] = [
     status: "live",
   },
   {
+    slug: "job-switch-roi",
+    path: "/calculators/job-switch-roi",
+    name: "Job Switch ROI Calculator",
+    shortName: "Job switch",
+    tagline: "Is the new job worth leaving for?",
+    description:
+      "Compare your current package with a new offer — bonus, benefits, raises, signing bonus, equity left behind and moving costs — and see the break-even point and 1-, 3- and 5-year financial impact.",
+    category: "Career",
+    status: "live",
+  },
+  {
     slug: "job-offer-comparison",
     path: "/calculators/job-offer-comparison",
     name: "Job Offer Comparison",

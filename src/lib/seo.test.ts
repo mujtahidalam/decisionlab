@@ -8,6 +8,8 @@ describe("seo helpers", () => {
     const m = buildPageMetadata({ title: "T", description: "D", path: "/calculators/masters-roi" });
     expect(m.alternates?.canonical).toBe(absoluteUrl("/calculators/masters-roi"));
     expect(m.openGraph?.title).toBe("T");
+    expect(JSON.stringify(m.openGraph)).toContain("/opengraph-image");
+    expect(JSON.stringify(m.twitter)).toContain("/opengraph-image");
     expect(m.title).toBe("T");
     expect(buildPageMetadata({ title: "T", description: "D", path: "/", absoluteTitle: true }).title).toEqual({ absolute: "T" });
   });

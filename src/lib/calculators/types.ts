@@ -25,6 +25,8 @@ export interface FieldDefinition<K extends string = string> {
   step: number;
   /** "core" fields are always visible; "advanced" fields live in a disclosure. */
   group: "core" | "advanced";
+  /** Optional heading to group related core fields (e.g. "Current job"). */
+  section?: string;
 }
 
 /** A single assumption the engine relied on, surfaced verbatim to users. */

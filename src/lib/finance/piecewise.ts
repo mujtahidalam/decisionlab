@@ -61,3 +61,35 @@ export function firstNonNegative(
   }
   return null;
 }
+
+/**
+ * Finds the time from which f stays ≥ 0 for the rest of [start, end] — the
+ * point after which a decision is permanently ahead within the horizon.
+ * Unlike `firstNonNegative`, a temporary lead that is later lost does not count.
+ *
+ * Returns `start` if f is non-negative throughout, `null` if f(end) < 0,
+ * otherwise the exact zero crossing on the last segment where f turns from
+ * negative to non-negative. Assumes f is linear between breakpoints.
+ */
+export function stableNonNegativeFrom(
+  f: (t: number) => number,
+  breakpoints: number[],
+  start: number,
+  end: number,
+): number | null {
+  if (end < start) return null;
+  const points = normaliseBreakpoints(breakpoints, start, end);
+  const values = points.map(f);
+  if (values[values.length - 1]! < -EPSILON) return null;
+
+  for (let i = points.length - 1; i > 0; i--) {
+    const v = values[i - 1]!;
+    if (v < -EPSILON) {
+      const t0 = points[i - 1]!;
+      const t1 = points[i]!;
+      const v1 = values[i]!;
+      return t0 + (-v / (v1 - v)) * (t1 - t0);
+    }
+  }
+  return points[0]!;
+}

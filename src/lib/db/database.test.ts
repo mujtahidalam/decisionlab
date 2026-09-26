@@ -86,7 +86,7 @@ describe("seeding", () => {
     const after = await listCalculators(conn.db);
     expect(after.map((c) => c.id)).toEqual(before.map((c) => c.id));
     const [{ count }] = (await conn.db.select({ count: sql<number>`count(*)::int` }).from(calculatorInputs)) as [{ count: number }];
-    expect(count).toBe(8);
+    expect(count).toBe(buildSeedData().reduce((n, c) => n + c.inputs.length, 0));
   });
 
   it("updates changed definitions in place", async () => {
@@ -124,6 +124,30 @@ describe("sessions repository", () => {
     const calc = (await getCalculatorBySlug(conn.db, "masters-roi"))!;
     await createSession(conn.db, { calculatorId: calc.id, inputs: {}, results: {} });
     await expect(conn.db.delete(calculators).where(eq(calculators.id, calc.id))).rejects.toThrow();
+  });
+});
+
+describe("job switch calculator in the database", () => {
+  it("is seeded live with its 13 inputs, including negative-allowed extra costs", async () => {
+    const calc = await getCalculatorBySlug(conn.db, "job-switch-roi");
+    expect(calc).toMatchObject({ status: "live", category: "Career", formulaVersion: "1.0.0" });
+    expect(calc!.inputs).toHaveLength(13);
+    const extra = calc!.inputs.find((i) => i.fieldName === "annualCostChange")!;
+    expect(extra.validationRules.min).toBeLessThan(0);
+  });
+
+  it("saves and loads a session with server-computed results", async () => {
+    const { JOB_SWITCH_DEFAULT_INPUTS } = await import("../calculators/job-switch-roi/defaults");
+    const saved = await saveSession(conn.db, "job-switch-roi", { inputs: { ...JOB_SWITCH_DEFAULT_INPUTS } });
+    if (!saved.ok) throw new Error(saved.error);
+    const session = await loadSession(conn.db, saved.id);
+    expect(session!.calculatorSlug).toBe("job-switch-roi");
+    const scenarios = session!.results.scenarios as Record<string, { netSwitchingCost: number }>;
+    expect(scenarios.expected!.netSwitchingCost).toBeCloseTo(11_750, 6);
+  });
+
+  it("rejects Master's inputs sent to the job switch calculator", async () => {
+    expect(await saveSession(conn.db, "job-switch-roi", { inputs: { ...DEFAULT_INPUTS } })).toMatchObject({ ok: false, status: 400 });
   });
 });
 
