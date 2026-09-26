@@ -10,7 +10,8 @@ DecisionLens helps people evaluate major financial and career decisions using
 - Every assumption displayed, plus a "How this calculation works" section
 - SEO: static pre-rendering, per-page metadata, canonical URLs, Open Graph,
   JSON-LD (`WebApplication`, `FAQPage`, `BreadcrumbList`, `WebSite`), sitemap, robots
-- Shareable results: inputs live in the URL query string, and nothing is stored server-side
+- Shareable results: inputs live in the URL query string
+- Optional **Save calculation**: stores inputs + server-computed results in PostgreSQL under a random link
 - Responsive, light/dark, keyboard- and screen-reader-friendly; charts include data tables
 
 Not in V1 (by design): authentication, payments, AI-generated recommendations.
@@ -23,6 +24,15 @@ cp .env.example .env.local   # set NEXT_PUBLIC_SITE_URL to your domain
 npm run dev                  # http://localhost:3000
 ```
 
+No database setup is needed for development: without `DATABASE_URL`, the app
+starts an embedded Postgres (PGlite) in `.data/pglite` and migrates and seeds
+it automatically.
+
+### Production database
+
+1. Create a PostgreSQL 13+ database and set `DATABASE_URL`.
+2. Run `npm run db:setup` (apply migrations + seed calculators) on every deploy, before starting the app.
+
 | Script | Purpose |
 |---|---|
 | `npm run dev` | Development server |
@@ -30,6 +40,9 @@ npm run dev                  # http://localhost:3000
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:coverage` | Tests with coverage for `src/lib` |
 | `npm run typecheck` | Strict TypeScript check |
+| `npm run db:generate` | Generate a SQL migration after editing `src/lib/db/schema.ts` |
+| `npm run db:migrate` / `db:seed` / `db:setup` | Apply migrations / sync calculators / both |
+| `npm run db:studio` | Browse the database (Drizzle Studio) |
 
 Requires Node.js ≥ 20.9.
 
@@ -45,7 +58,11 @@ src/lib/finance/                   pure financial primitives (step-growth earnin
 src/lib/calculators/masters-roi/   models, engine, scenarios, sensitivity, validation, URL state, content
 src/components/calculator/         reusable calculator UI (inputs, stats, scenarios, charts, methodology, FAQ)
 src/features/masters-roi/          client container wiring state → engine → components
+src/lib/db/                        schema, connections, seed, repositories (PostgreSQL via Drizzle)
+src/lib/services/                  session saving/loading used by the API routes
+src/app/api/                       JSON API (calculators, sessions)
 src/app/                           routes, metadata, JSON-LD, sitemap, robots, OG image
+drizzle/                           generated SQL migrations
 ```
 
 `src/lib` has no React imports, and every formula in it is unit-tested against

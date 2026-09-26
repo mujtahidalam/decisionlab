@@ -108,6 +108,6 @@ export const MASTERS_ROI_FAQ: readonly FaqItem[] = [
   {
     question: "Are my inputs stored?",
     answer:
-      "No. Calculations run locally in your browser. Your inputs are only kept in the page URL so you can bookmark or share a scenario.",
+      "Only if you choose to. Calculations run in your browser, and your inputs live in the page URL so you can bookmark or share a scenario. If you click \"Save calculation\", your inputs and the computed results are stored anonymously under a random link so you can come back to them. No account, name or email is ever collected.",
   },
 ] as const;

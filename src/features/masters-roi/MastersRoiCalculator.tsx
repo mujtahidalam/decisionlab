@@ -25,6 +25,8 @@ import { analyseSensitivity } from "@/lib/calculators/masters-roi/sensitivity";
 import type { MastersRoiInputKey, MastersRoiInputs, MastersRoiResult } from "@/lib/calculators/masters-roi/types";
 import { parseUrlState, serializeUrlState } from "@/lib/calculators/masters-roi/url-state";
 import { validateMastersRoiInputs } from "@/lib/calculators/masters-roi/validation";
+import { parseMastersRoiInputs } from "@/lib/calculators/masters-roi/input-parsing";
+import { fetchCalculatorSession, saveCalculatorSession } from "@/lib/api-client/sessions";
 import type { SensitivityAnalysis } from "@/lib/calculators/types";
 import {
   CURRENCIES,
@@ -60,6 +62,21 @@ function compute(inputs: MastersRoiInputs): Computed {
 type Tone = "positive" | "negative" | "neutral";
 const tone = (v: number): Tone => (v > 0.5 ? "positive" : v < -0.5 ? "negative" : "neutral");
 
+const SESSION_PARAM = "session";
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** A saved calculation whose inputs are currently shown (so the URL can point at it). */
+interface ActiveSession {
+  id: string;
+  inputs: MastersRoiInputs;
+  createdAt: string;
+}
+
+const sameInputs = (a: MastersRoiInputs, b: MastersRoiInputs) =>
+  (Object.keys(a) as MastersRoiInputKey[]).every((k) => a[k] === b[k]);
+
+type SaveState = { status: "idle" } | { status: "saving" } | { status: "error"; message: string };
+
 function breakEvenText(r: MastersRoiResult): string {
   if (!r.breakEven.reached || r.breakEven.yearsAfterGraduation === null) return "Not within 50 yrs";
   if (r.breakEven.yearsAfterGraduation === 0) return "Immediately";
@@ -71,24 +88,70 @@ export function MastersRoiCalculator() {
   const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY);
   const [hydrated, setHydrated] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Load shared state from the URL once, after hydration (keeps the page statically renderable).
+  // A `?session=<id>` link loads a saved calculation from the database.
   useEffect(() => {
-    const state = parseUrlState(new URLSearchParams(window.location.search));
+    const params = new URLSearchParams(window.location.search);
+    const state = parseUrlState(params);
     setInputs(state.inputs);
     setCurrency(state.currency);
-    setHydrated(true);
+
+    const sessionId = params.get(SESSION_PARAM);
+    if (!sessionId) {
+      setHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const result = SESSION_ID_RE.test(sessionId)
+        ? await fetchCalculatorSession(sessionId)
+        : ({ ok: false, error: "Session not found." } as const);
+      if (cancelled) return;
+      const parsed = result.ok && result.data.calculatorSlug === "masters-roi" ? parseMastersRoiInputs(result.data.inputs) : null;
+      if (result.ok && parsed?.ok) {
+        setInputs(parsed.inputs);
+        setActiveSession({ id: result.data.id, inputs: parsed.inputs, createdAt: result.data.createdAt });
+      } else {
+        setLoadError("That saved calculation couldn't be loaded. Showing default values instead.");
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const validation = useMemo(() => validateMastersRoiInputs(inputs), [inputs]);
 
+  // Once inputs diverge from a loaded/saved session, the session no longer describes the page.
+  const sessionIsCurrent = activeSession !== null && sameInputs(activeSession.inputs, inputs);
+
   // Keep URL in sync (only with valid inputs, so shared links always work).
   useEffect(() => {
     if (!hydrated || !validation.valid) return;
-    const qs = serializeUrlState({ inputs, currency });
+    const params = new URLSearchParams(serializeUrlState({ inputs: sessionIsCurrent ? DEFAULT_INPUTS : inputs, currency }));
+    if (sessionIsCurrent) params.set(SESSION_PARAM, activeSession.id);
+    const qs = params.toString();
     const url = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", url);
-  }, [inputs, currency, hydrated, validation.valid]);
+  }, [inputs, currency, hydrated, validation.valid, sessionIsCurrent, activeSession]);
+
+  const saveCalculation = async () => {
+    if (!validation.valid) return;
+    setSaveState({ status: "saving" });
+    const snapshot = { ...inputs };
+    const result = await saveCalculatorSession("masters-roi", { ...snapshot });
+    if (result.ok) {
+      setActiveSession({ id: result.data.id, inputs: snapshot, createdAt: result.data.createdAt });
+      setSaveState({ status: "idle" });
+    } else {
+      setSaveState({ status: "error", message: result.error });
+    }
+  };
 
   // Results: recompute on valid inputs; otherwise keep showing the last valid results.
   const lastGood = useRef<Computed | null>(null);
@@ -292,14 +355,32 @@ export function MastersRoiCalculator() {
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={copyLink}
-            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
+            onClick={saveCalculation}
+            disabled={stale || sessionIsCurrent || saveState.status === "saving"}
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {copied ? "Link copied" : "Copy link to these results"}
+            {saveState.status === "saving" ? "Saving…" : sessionIsCurrent ? "Saved ✓" : "Save calculation"}
+          </button>
+          <button
+            type="button"
+            onClick={copyLink}
+            className="rounded-lg border border-line-strong px-3 py-2 text-sm font-medium text-ink hover:bg-surface-2"
+          >
+            {copied ? "Link copied" : "Copy link"}
           </button>
           <a href="#how-it-works" className="rounded-lg border border-line-strong px-3 py-2 text-sm font-medium text-ink hover:bg-surface-2">
             How this is calculated
           </a>
+        </div>
+        <div aria-live="polite" className="mt-3 text-xs">
+          {sessionIsCurrent ? (
+            <p className="text-ink-2">
+              Saved calculation from {new Date(activeSession.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" })}. The
+              page link now opens it; editing any input starts a new, unsaved calculation.
+            </p>
+          ) : null}
+          {saveState.status === "error" ? <p className="text-negative">Couldn&apos;t save: {saveState.message}</p> : null}
+          {loadError ? <p className="text-negative">{loadError}</p> : null}
         </div>
       </Card>
 

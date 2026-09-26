@@ -25,3 +25,10 @@ export const MODEL_CONSTANTS = Object.freeze({
   /** Timeline sampling resolution (points per year). */
   timelineStepsPerYear: 12,
 });
+
+/**
+ * Version of the calculation model. Bump it whenever a formula changes in a way
+ * that would change results for the same inputs (major: model change, minor:
+ * new outputs, patch: bug fix). Saved sessions record the version that produced them.
+ */
+export const MASTERS_ROI_FORMULA_VERSION = "1.0.0";

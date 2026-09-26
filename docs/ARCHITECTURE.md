@@ -21,7 +21,10 @@ Degree ROI Calculator — on a foundation built to host many more.
 - **Vitest** for unit tests of every financial formula
 - Charts are hand-built SVG/HTML — no charting dependency, fully server-renderable and accessible.
 
-No database, auth, payments or AI features in V1 (explicit non-goals).
+- **PostgreSQL** via **Drizzle ORM** (typed schema + generated SQL migrations).
+  Local development and tests use **PGlite** (Postgres compiled to WebAssembly) — no database server to install.
+
+No auth, payments or AI features in V1 (explicit non-goals).
 
 ## 3. Layered design
 
@@ -159,19 +162,66 @@ One-at-a-time ("tornado") analysis: each assumption is moved to a low and a
 high value while all others stay at the user's inputs; the change in 10-year
 impact is recorded and assumptions are ranked by total swing.
 
-## 6. Adding a new calculator
+## 6. Database
+
+```
+calculators                      calculator_inputs                    calculator_sessions
+───────────                      ─────────────────                    ───────────────────
+id              int PK ◄──┐      calculator_id  int FK ─► calculators  id             uuid PK (random)
+slug            text UQ   ├───── field_name     text   ┐ PK            calculator_id  int FK ─► calculators
+name            text      │      field_type     enum   ┘               inputs         jsonb
+description     text      │      default_value  jsonb                  results        jsonb
+category        text      │      validation_rules jsonb                created_at     timestamptz
+formula_version text?     │                                           INDEX (calculator_id, created_at)
+status          enum      └──── ON DELETE CASCADE                     ON DELETE RESTRICT
+```
+
+- **Code is the source of truth** for calculator definitions (`registry.ts`,
+  each calculator's `fields.ts`, `MASTERS_ROI_FORMULA_VERSION`). `calculators`
+  and `calculator_inputs` mirror it; `npm run db:seed` upserts them idempotently.
+  Pages stay statically generated and never need the database to render.
+- `validation_rules` and `default_value` are stored in **model units**
+  (percentages as decimals), matching the values stored in `inputs`.
+- **Sessions are only created when a user clicks "Save calculation".** The API
+  re-validates the inputs and **recomputes results on the server** with the
+  deterministic engine; any `results` sent by a client are ignored. The stored
+  results include `formulaVersion`, so old sessions stay interpretable after
+  formula changes. Session ids are random UUIDs, so links can't be enumerated.
+- Deleting a calculator cascades to its input rows but is blocked while saved
+  sessions reference it.
+
+| Layer | File |
+|---|---|
+| Schema | `src/lib/db/schema.ts` → migrations in `/drizzle` (`npm run db:generate`) |
+| Connections | `src/lib/db/connect.ts` (PGlite / node-postgres), `client.ts` (cached app handle, server-only) |
+| Seed | `src/lib/db/seed.ts` |
+| Repositories | `src/lib/db/repositories/{calculators,sessions}.ts` |
+| Service | `src/lib/services/sessions.ts` (validation + server-side computation) |
+| API | `src/app/api/**/route.ts` |
+
+### API
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/calculators` | All calculators |
+| `GET /api/calculators/:slug` | One calculator with its input definitions |
+| `POST /api/calculators/:slug/sessions` | Save a calculation. Body `{ "inputs": {…} }` → `201 { id, createdAt, warnings }`; `400` with `fieldErrors` on invalid input; `404` unknown calculator; `409` not live; `413` body > 16 KB |
+| `GET /api/sessions/:id` | A saved calculation (inputs + results); `404` if unknown |
+
+## 7. Adding a new calculator
 
 1. Create `src/lib/calculators/<slug>/` with `types.ts`, `defaults.ts`,
    `fields.ts`, `engine.ts`, tests, and `content.ts`.
 2. Register it in `src/lib/calculators/registry.ts` (drives the directory,
-   landing page and sitemap).
+   landing page and sitemap) and add its model to
+   `src/lib/calculators/definitions.ts`, then run `npm run db:seed`.
 3. Create `src/features/<slug>/<Name>Calculator.tsx` composing the generic
    `components/calculator/*` blocks.
 4. Add `src/app/calculators/<slug>/page.tsx` using `buildCalculatorMetadata()`
    and `buildCalculatorJsonLd()` from `lib/seo.ts`.
 
-## 7. Quality gates
+## 8. Quality gates
 
 - `npm run typecheck` — strict TypeScript
-- `npm test` — unit tests for every formula (hand-verified expected values)
+- `npm test` — unit tests for every formula, plus database tests against an in-memory Postgres
 - `npm run build` — production build, static pre-rendering of all pages

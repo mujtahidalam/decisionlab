@@ -31,7 +31,7 @@ const principles = [
   },
   {
     title: "Private by design",
-    body: "Calculations run in your browser. No sign-up, no tracking of your inputs — they live only in your page URL.",
+    body: "Calculations run in your browser with no sign-up. Your inputs are only stored if you choose to save a calculation — anonymously, under a random link.",
   },
 ];
 
