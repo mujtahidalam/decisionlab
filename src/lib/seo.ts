@@ -1,0 +1,104 @@
+/**
+ * SEO helpers: Next.js Metadata builders and schema.org JSON-LD builders.
+ * Pure functions — no React — so they can be unit-tested and reused by every page.
+ */
+
+import type { Metadata } from "next";
+import type { CalculatorMeta } from "./calculators/types";
+import { absoluteUrl, siteConfig } from "./site";
+
+interface PageMetadataOptions {
+  title: string;
+  description: string;
+  path: string;
+  keywords?: readonly string[];
+  /** When true the title is used verbatim instead of the "%s | DecisionLens" template. */
+  absoluteTitle?: boolean;
+}
+
+export function buildPageMetadata({
+  title,
+  description,
+  path,
+  keywords,
+  absoluteTitle = false,
+}: PageMetadataOptions): Metadata {
+  const url = absoluteUrl(path);
+  return {
+    title: absoluteTitle ? { absolute: title } : title,
+    description,
+    keywords: keywords ? [...keywords] : undefined,
+    alternates: { canonical: url },
+    openGraph: {
+      type: "website",
+      url,
+      title,
+      description,
+      siteName: siteConfig.name,
+      locale: siteConfig.locale,
+    },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
+
+type JsonLd = Record<string, unknown>;
+
+export function websiteJsonLd(): JsonLd {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: siteConfig.name,
+    url: siteConfig.url,
+    description: siteConfig.description,
+  };
+}
+
+export function organizationJsonLd(): JsonLd {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: siteConfig.name,
+    url: siteConfig.url,
+  };
+}
+
+export function calculatorJsonLd(calc: CalculatorMeta, description: string): JsonLd {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: calc.name,
+    url: absoluteUrl(calc.path),
+    description,
+    applicationCategory: "FinanceApplication",
+    operatingSystem: "Any (web browser)",
+    browserRequirements: "Requires JavaScript",
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    publisher: { "@type": "Organization", name: siteConfig.name, url: siteConfig.url },
+  };
+}
+
+export function faqJsonLd(items: readonly { question: string; answer: string }[]): JsonLd {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: items.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: { "@type": "Answer", text: item.answer },
+    })),
+  };
+}
+
+export function breadcrumbJsonLd(items: readonly { name: string; path: string }[]): JsonLd {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: absoluteUrl(item.path),
+    })),
+  };
+}
